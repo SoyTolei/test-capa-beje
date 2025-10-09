@@ -67,6 +67,17 @@ export default function SetupAdminPage() {
               <p className="text-sm text-muted-foreground">Email: {email}</p>
               <p className="text-sm text-muted-foreground">Password: {password}</p>
             </div>
+            <Alert>
+              <Database className="h-4 w-4" />
+              <AlertDescription>
+                <p className="font-semibold mb-1">Último paso importante:</p>
+                <p className="text-sm">
+                  Ejecuta el script{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded">scripts/003_fix_rls_and_create_admin_profile.sql</code>{" "}
+                  para crear tu perfil en la base de datos.
+                </p>
+              </AlertDescription>
+            </Alert>
             <Button asChild className="w-full">
               <a href="/login">Ir al Login</a>
             </Button>
@@ -89,10 +100,11 @@ export default function SetupAdminPage() {
               <Database className="h-4 w-4 text-orange-600" />
               <AlertDescription className="text-orange-800 dark:text-orange-200">
                 <p className="font-semibold mb-2">Base de datos no configurada</p>
-                <p className="text-sm mb-2">Debes ejecutar primero los scripts SQL:</p>
+                <p className="text-sm mb-2">Debes ejecutar primero los scripts SQL en orden:</p>
                 <ol className="text-sm list-decimal list-inside space-y-1 ml-2">
                   <li>scripts/001_create_tables.sql</li>
                   <li>scripts/002_seed_data.sql</li>
+                  <li>scripts/003_fix_rls_and_create_admin_profile.sql</li>
                 </ol>
                 <p className="text-sm mt-2">
                   Puedes ejecutarlos desde el panel de v0 o desde tu dashboard de Supabase.

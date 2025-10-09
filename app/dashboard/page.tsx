@@ -4,7 +4,15 @@ import { DashboardHeader } from "@/components/dashboard-header"
 import { CourseCard } from "@/components/course-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { BookOpen, TrendingUp, Award, Clock } from "lucide-react"
-import type { CourseWithProgress } from "@/lib/types"
+import type { CourseWithProgress, CourseCategory } from "@/lib/types"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
+const CATEGORY_LABELS: Record<CourseCategory, string> = {
+  tecnico: "Técnico",
+  flex: "FLEX",
+  saas: "SAAS",
+  sueldos_jornales: "Sueldos y Jornales",
+}
 
 export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient()
@@ -17,15 +25,26 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
-  // Get user profile
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  const { data: profile, error: profileError } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
-  if (!profile) {
+  if (profileError) {
+    if (profileError.code === "PGRST205") {
+      // Tables don't exist
+      redirect("/setup-admin")
+    }
+    if (profileError.code === "PGRST116") {
+      // Profile doesn't exist - redirect to setup
+      redirect("/setup-admin?error=no-profile")
+    }
     redirect("/login")
   }
 
+  if (!profile) {
+    redirect("/setup-admin?error=no-profile")
+  }
+
   // Get all published courses with progress
-  const { data: courses } = await supabase
+  const { data: coursesData } = await supabase
     .from("courses")
     .select(
       `
@@ -36,29 +55,30 @@ export default async function DashboardPage() {
     .eq("is_published", true)
     .order("created_at", { ascending: false })
 
-  // Get user's course progress
-  const { data: userProgress } = await supabase.from("user_course_progress").select("*").eq("user_id", user.id)
+  const courses = coursesData || []
+
+  const { data: progressData } = await supabase.from("user_course_progress").select("*").eq("user_id", user.id)
+  const userProgress = progressData || []
 
   // Get lesson counts and completed lessons for each course
   const coursesWithProgress: CourseWithProgress[] = await Promise.all(
-    (courses || []).map(async (course) => {
+    courses.map(async (course) => {
+      // Get module IDs for this course
+      const { data: modulesData } = await supabase.from("modules").select("id").eq("course_id", course.id)
+      const moduleIds = modulesData?.map((m) => m.id) || []
+
       // Get total lessons count
       const { count: totalLessons } = await supabase
         .from("lessons")
         .select("*", { count: "exact", head: true })
         .eq("is_published", true)
-        .in(
-          "module_id",
-          (await supabase.from("modules").select("id").eq("course_id", course.id)).data?.map((m) => m.id) || [],
-        )
+        .in("module_id", moduleIds)
+
+      // Get lesson IDs for progress tracking
+      const { data: lessonsData } = await supabase.from("lessons").select("id").in("module_id", moduleIds)
+      const lessonIds = lessonsData?.map((l) => l.id) || []
 
       // Get completed lessons count
-      const moduleIds =
-        (await supabase.from("modules").select("id").eq("course_id", course.id)).data?.map((m) => m.id) || []
-
-      const lessonIds =
-        (await supabase.from("lessons").select("id").in("module_id", moduleIds)).data?.map((l) => l.id) || []
-
       const { count: completedLessons } = await supabase
         .from("user_lesson_progress")
         .select("*", { count: "exact", head: true })
@@ -84,6 +104,17 @@ export default async function DashboardPage() {
   const inProgressCourses = enrolledCourses.filter((c) => c.progress_percentage > 0 && c.progress_percentage < 100)
   const totalLessonsCompleted = enrolledCourses.reduce((sum, c) => sum + c.completed_lessons, 0)
 
+  const coursesByCategory = coursesWithProgress.reduce(
+    (acc, course) => {
+      if (!acc[course.category]) {
+        acc[course.category] = []
+      }
+      acc[course.category].push(course)
+      return acc
+    },
+    {} as Record<CourseCategory, CourseWithProgress[]>,
+  )
+
   return (
     <div className="min-h-screen bg-background">
       <DashboardHeader profile={profile} />
@@ -92,7 +123,7 @@ export default async function DashboardPage() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2 text-foreground">Bienvenido, {profile.full_name}</h2>
-          <p className="text-muted-foreground">Continúa tu capacitación en el sistema Bejerman</p>
+          <p className="text-muted-foreground">Continúa tu capacitación profesional</p>
         </div>
 
         {/* Stats Grid */}
@@ -154,7 +185,7 @@ export default async function DashboardPage() {
           </section>
         )}
 
-        {/* All Courses Section */}
+        {/* All Courses Section with Category Tabs */}
         <section>
           <h3 className="text-2xl font-bold mb-4 text-foreground">
             {enrolledCourses.length > 0 ? "Todos los Cursos" : "Cursos Disponibles"}
@@ -167,11 +198,34 @@ export default async function DashboardPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {coursesWithProgress.map((course) => (
-                <CourseCard key={course.id} course={course} />
+            <Tabs defaultValue="all" className="w-full">
+              <TabsList className="mb-6">
+                <TabsTrigger value="all">Todos</TabsTrigger>
+                {Object.keys(coursesByCategory).map((category) => (
+                  <TabsTrigger key={category} value={category}>
+                    {CATEGORY_LABELS[category as CourseCategory]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              <TabsContent value="all">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {coursesWithProgress.map((course) => (
+                    <CourseCard key={course.id} course={course} />
+                  ))}
+                </div>
+              </TabsContent>
+
+              {Object.entries(coursesByCategory).map(([category, categoryCourses]) => (
+                <TabsContent key={category} value={category}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {categoryCourses.map((course) => (
+                      <CourseCard key={course.id} course={course} />
+                    ))}
+                  </div>
+                </TabsContent>
               ))}
-            </div>
+            </Tabs>
           )}
         </section>
       </main>

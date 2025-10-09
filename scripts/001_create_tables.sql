@@ -4,6 +4,9 @@ CREATE TYPE user_role AS ENUM ('admin', 'instructor', 'student');
 -- Create enum for lesson types
 CREATE TYPE lesson_type AS ENUM ('video', 'pdf', 'youtube');
 
+-- Create enum for course categories
+CREATE TYPE course_category AS ENUM ('tecnico', 'flex', 'saas', 'sueldos_jornales');
+
 -- Create profiles table (extends Supabase auth.users)
 CREATE TABLE profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -21,6 +24,7 @@ CREATE TABLE courses (
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   thumbnail_url TEXT,
+  category course_category NOT NULL,
   instructor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   is_published BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -81,6 +85,7 @@ CREATE TABLE user_lesson_progress (
 CREATE INDEX idx_profiles_role ON profiles(role);
 CREATE INDEX idx_courses_instructor ON courses(instructor_id);
 CREATE INDEX idx_courses_published ON courses(is_published);
+CREATE INDEX idx_courses_category ON courses(category);
 CREATE INDEX idx_modules_course ON modules(course_id);
 CREATE INDEX idx_lessons_module ON lessons(module_id);
 CREATE INDEX idx_user_course_progress_user ON user_course_progress(user_id);

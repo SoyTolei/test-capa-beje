@@ -1,5 +1,6 @@
 export type UserRole = "admin" | "instructor" | "student"
 export type LessonType = "video" | "pdf" | "youtube"
+export type CourseCategory = "tecnico" | "flex" | "saas" | "sueldos_jornales"
 
 export interface Profile {
   id: string
@@ -16,6 +17,7 @@ export interface Course {
   title: string
   description: string
   thumbnail_url?: string
+  category: CourseCategory
   instructor_id?: string
   is_published: boolean
   created_at: string
