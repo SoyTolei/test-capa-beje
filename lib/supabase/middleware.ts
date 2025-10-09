@@ -25,10 +25,21 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  // Refresh session if expired
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const cookies = request.cookies.getAll()
+  const hasAuthCookies = cookies.some((cookie) => cookie.name.includes("sb-") && cookie.name.includes("-auth-token"))
+
+  let user = null
+
+  // Solo intentar obtener el usuario si hay cookies de autenticación
+  if (hasAuthCookies) {
+    try {
+      const { data } = await supabase.auth.getUser()
+      user = data.user
+    } catch (error) {
+      // Si hay error al obtener el usuario, limpiar cookies y continuar
+      console.error("[v0] Error getting user:", error)
+    }
+  }
 
   // Protect admin routes
   if (request.nextUrl.pathname.startsWith("/admin") && user) {
