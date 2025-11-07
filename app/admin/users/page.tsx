@@ -9,6 +9,22 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { UserPlus } from "lucide-react"
 
+// ✅ Definir tipos explícitos
+interface Enrollment {
+  id: string
+  completed_at: string | null
+}
+
+interface UserWithStats {
+  id: string
+  email: string
+  full_name: string
+  role: string
+  created_at: string
+  avatar_url?: string | null
+  enrollments: Enrollment[]
+}
+
 export default async function AdminUsersPage() {
   const supabase = await getSupabaseServerClient()
 
@@ -21,38 +37,42 @@ export default async function AdminUsersPage() {
   }
 
   // Get user profile
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, role, full_name, email, avatar_url, created_at, updated_at")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || (profile.role !== "admin" && profile.role !== "instructor")) {
     redirect("/dashboard")
   }
 
-  // Get all users
-  const { data: users } = await supabase.from("profiles").select("*").order("created_at", { ascending: false })
+  // ✅ OPTIMIZACIÓN: Una sola query con JOIN para traer usuarios con sus stats
+  const { data: usersWithStats } = await supabase
+    .from("profiles")
+    .select(`
+      id,
+      email,
+      full_name,
+      role,
+      created_at,
+      avatar_url,
+      enrollments:user_course_progress(
+        id,
+        completed_at
+      )
+    `)
+    .order("created_at", { ascending: false })
+    .returns<UserWithStats[]>()
 
-  // Get enrollment counts for each user
-  const usersWithStats = await Promise.all(
-    (users || []).map(async (user) => {
-      const { count: enrollmentCount } = await supabase
-        .from("user_course_progress")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
+  // ✅ Procesar stats en memoria (mucho más rápido que queries individuales)
+  const processedUsers = (usersWithStats || []).map(user => ({
+    ...user,
+    enrollmentCount: user.enrollments?.length || 0,
+    completedCount: user.enrollments?.filter(e => e.completed_at).length || 0,
+  }))
 
-      const { count: completedCount } = await supabase
-        .from("user_course_progress")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .not("completed_at", "is", null)
-
-      return {
-        ...user,
-        enrollmentCount: enrollmentCount || 0,
-        completedCount: completedCount || 0,
-      }
-    }),
-  )
-
-  const getRoleBadgeVariant = (role: string) => {
+  const getRoleBadgeVariant = (role: string): "default" | "secondary" | "outline" => {
     switch (role) {
       case "admin":
         return "default"
@@ -100,11 +120,11 @@ export default async function AdminUsersPage() {
             {/* Users List */}
             <Card>
               <CardHeader>
-                <CardTitle>Todos los Usuarios ({usersWithStats.length})</CardTitle>
+                <CardTitle>Todos los Usuarios ({processedUsers.length})</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {usersWithStats.map((user) => {
+                  {processedUsers.map((user) => {
                     const initials = user.full_name
                       .split(" ")
                       .map((n) => n[0])

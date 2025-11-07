@@ -1,9 +1,7 @@
 "use client"
 
-import type React from "react"
-
-import { useState, use } from "react"
-import { useRouter } from "next/navigation"
+import { useState } from "react"
+import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,12 +13,10 @@ import { AdminSidebar } from "@/components/admin-sidebar"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 
-interface NewModulePageProps {
-  params: Promise<{ courseId: string }>
-}
-
-export default function NewModulePage({ params }: NewModulePageProps) {
-  const { courseId } = use(params)
+export default function NewModulePage() {
+  const params = useParams()
+  const courseId = params.courseId as string
+  
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [error, setError] = useState("")
@@ -34,7 +30,6 @@ export default function NewModulePage({ params }: NewModulePageProps) {
     setLoading(true)
 
     try {
-      // Get current max order_index
       const { data: existingModules } = await supabase
         .from("modules")
         .select("order_index")
@@ -82,13 +77,13 @@ export default function NewModulePage({ params }: NewModulePageProps) {
           <div className="max-w-3xl mx-auto">
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-foreground">Crear Nuevo Módulo</h1>
-              <p className="text-muted-foreground mt-1">Agrega un módulo al curso</p>
+              <p className="text-muted-foreground mt-1">Organiza el contenido del curso en módulos</p>
             </div>
 
             <Card>
               <CardHeader>
                 <CardTitle>Información del Módulo</CardTitle>
-                <CardDescription>Los módulos organizan las lecciones del curso</CardDescription>
+                <CardDescription>Los módulos agrupan lecciones relacionadas</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -104,7 +99,7 @@ export default function NewModulePage({ params }: NewModulePageProps) {
                     </Label>
                     <Input
                       id="title"
-                      placeholder="Ej: Introducción al Sistema Bejerman"
+                      placeholder="Ej: Introducción al Sistema"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       required

@@ -1,35 +1,31 @@
 "use client"
 
-import type React from "react"
-
-import { useState, use } from "react"
-import { useRouter } from "next/navigation"
+import { useState } from "react"
+import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { Loader2, ArrowLeft } from "lucide-react"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
-import type { LessonType } from "@/lib/types"
 
-interface NewLessonPageProps {
-  params: Promise<{ courseId: string; moduleId: string }>
-}
+type LessonType = "youtube" | "pdf" | "text"
 
-export default function NewLessonPage({ params }: NewLessonPageProps) {
-  const { courseId, moduleId } = use(params)
+export default function NewLessonPage() {
+  const params = useParams()
+  const courseId = params.courseId as string
+  const moduleId = params.moduleId as string
+  
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [type, setType] = useState<LessonType>("youtube")
   const [contentUrl, setContentUrl] = useState("")
-  const [durationMinutes, setDurationMinutes] = useState("")
-  const [isPublished, setIsPublished] = useState(false)
+  const [textContent, setTextContent] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -41,7 +37,7 @@ export default function NewLessonPage({ params }: NewLessonPageProps) {
     setLoading(true)
 
     try {
-      // Get current max order_index
+      // Get current max order_index for this module
       const { data: existingLessons } = await supabase
         .from("lessons")
         .select("order_index")
@@ -51,16 +47,21 @@ export default function NewLessonPage({ params }: NewLessonPageProps) {
 
       const nextOrderIndex = existingLessons && existingLessons.length > 0 ? existingLessons[0].order_index + 1 : 1
 
-      const { error } = await supabase.from("lessons").insert({
+      const lessonData: any = {
         module_id: moduleId,
         title,
         description: description || null,
         type,
-        content_url: contentUrl || null,
-        duration_minutes: durationMinutes ? Number.parseInt(durationMinutes) : null,
         order_index: nextOrderIndex,
-        is_published: isPublished,
-      })
+      }
+
+      if (type === "text") {
+        lessonData.content = textContent
+      } else {
+        lessonData.content_url = contentUrl
+      }
+
+      const { error } = await supabase.from("lessons").insert(lessonData)
 
       if (error) throw error
 
@@ -99,7 +100,7 @@ export default function NewLessonPage({ params }: NewLessonPageProps) {
             <Card>
               <CardHeader>
                 <CardTitle>Información de la Lección</CardTitle>
-                <CardDescription>Completa los detalles del contenido</CardDescription>
+                <CardDescription>Elige el tipo de contenido y completa los detalles</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -115,7 +116,7 @@ export default function NewLessonPage({ params }: NewLessonPageProps) {
                     </Label>
                     <Input
                       id="title"
-                      placeholder="Ej: Navegación Básica del Sistema"
+                      placeholder="Ej: Cómo acceder al sistema"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       required
@@ -139,70 +140,54 @@ export default function NewLessonPage({ params }: NewLessonPageProps) {
                     <Label htmlFor="type">
                       Tipo de Contenido <span className="text-destructive">*</span>
                     </Label>
-                    <Select value={type} onValueChange={(value) => setType(value as LessonType)} disabled={loading}>
-                      <SelectTrigger>
+                    <Select value={type} onValueChange={(value: LessonType) => setType(value)} disabled={loading}>
+                      <SelectTrigger id="type">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="youtube">Video de YouTube</SelectItem>
-                        <SelectItem value="video">Video Cargado</SelectItem>
                         <SelectItem value="pdf">Documento PDF</SelectItem>
+                        <SelectItem value="text">Texto / HTML</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="contentUrl">
-                      URL del Contenido <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      id="contentUrl"
-                      type="url"
-                      placeholder={
-                        type === "youtube"
-                          ? "https://www.youtube.com/watch?v=..."
-                          : type === "pdf"
-                            ? "URL del PDF"
-                            : "URL del video"
-                      }
-                      value={contentUrl}
-                      onChange={(e) => setContentUrl(e.target.value)}
-                      required
-                      disabled={loading}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {type === "youtube"
-                        ? "Pega el enlace completo del video de YouTube"
-                        : type === "pdf"
-                          ? "URL del archivo PDF"
-                          : "URL del archivo de video"}
-                    </p>
-                  </div>
-
-                  {type !== "pdf" && (
+                  {type === "text" ? (
                     <div className="space-y-2">
-                      <Label htmlFor="duration">Duración (minutos)</Label>
-                      <Input
-                        id="duration"
-                        type="number"
-                        placeholder="15"
-                        value={durationMinutes}
-                        onChange={(e) => setDurationMinutes(e.target.value)}
+                      <Label htmlFor="textContent">
+                        Contenido de Texto <span className="text-destructive">*</span>
+                      </Label>
+                      <Textarea
+                        id="textContent"
+                        placeholder="Escribe el contenido de la lección..."
+                        value={textContent}
+                        onChange={(e) => setTextContent(e.target.value)}
+                        required
                         disabled={loading}
-                        min="1"
+                        rows={10}
+                        className="font-mono text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">Puedes usar HTML básico para formato</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label htmlFor="contentUrl">
+                        {type === "youtube" ? "URL de YouTube" : "URL del PDF"}{" "}
+                        <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="contentUrl"
+                        type="url"
+                        placeholder={
+                          type === "youtube" ? "https://www.youtube.com/watch?v=..." : "https://ejemplo.com/archivo.pdf"
+                        }
+                        value={contentUrl}
+                        onChange={(e) => setContentUrl(e.target.value)}
+                        required
+                        disabled={loading}
                       />
                     </div>
                   )}
-
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="published">Publicar Lección</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Las lecciones publicadas serán visibles para estudiantes
-                      </p>
-                    </div>
-                    <Switch id="published" checked={isPublished} onCheckedChange={setIsPublished} disabled={loading} />
-                  </div>
 
                   <div className="flex gap-4">
                     <Button type="submit" disabled={loading} className="flex-1">

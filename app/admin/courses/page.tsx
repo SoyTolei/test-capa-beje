@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
+import Image from "next/image"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { AdminSidebar } from "@/components/admin-sidebar"
@@ -7,6 +8,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Users, BookOpen } from "lucide-react"
+
+// ✅ Tipos explícitos
+interface Module {
+  id: string
+  lessons: { id: string }[]
+}
+
+interface CourseWithRelations {
+  id: string
+  title: string
+  description: string
+  thumbnail_url: string | null
+  is_published: boolean
+  created_at: string
+  instructor_id: string
+  instructor: {
+    full_name: string
+  } | null
+  modules: Module[]
+  enrollments: { id: string }[]
+}
 
 export default async function AdminCoursesPage() {
   const supabase = await getSupabaseServerClient()
@@ -19,49 +41,50 @@ export default async function AdminCoursesPage() {
     redirect("/login")
   }
 
-  // Get user profile
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  // Get user profile (solo campos necesarios)
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, role, full_name, email, avatar_url, created_at, updated_at")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || (profile.role !== "admin" && profile.role !== "instructor")) {
     redirect("/dashboard")
   }
 
-  // Get all courses
+  // ✅ OPTIMIZACIÓN: Una sola query con JOINs anidados
   const { data: courses } = await supabase
     .from("courses")
-    .select(
-      `
-      *,
-      instructor:profiles!courses_instructor_id_fkey(*)
-    `,
-    )
+    .select(`
+      id,
+      title,
+      description,
+      thumbnail_url,
+      is_published,
+      created_at,
+      instructor_id,
+      instructor:profiles!courses_instructor_id_fkey(full_name),
+      modules(
+        id,
+        lessons(id)
+      ),
+      enrollments:user_course_progress(id)
+    `)
     .order("created_at", { ascending: false })
+    .returns<CourseWithRelations[]>()
 
-  // Get stats for each course
-  const coursesWithStats = await Promise.all(
-    (courses || []).map(async (course) => {
-      // Get enrollment count
-      const { count: enrollmentCount } = await supabase
-        .from("user_course_progress")
-        .select("*", { count: "exact", head: true })
-        .eq("course_id", course.id)
+  // ✅ Procesar stats en memoria (instantáneo)
+  const coursesWithStats = (courses || []).map(course => {
+    const lessonCount = course.modules?.reduce((total, module) => {
+      return total + (module.lessons?.length || 0)
+    }, 0) || 0
 
-      // Get total lessons count
-      const moduleIds =
-        (await supabase.from("modules").select("id").eq("course_id", course.id)).data?.map((m) => m.id) || []
-
-      const { count: lessonCount } = await supabase
-        .from("lessons")
-        .select("*", { count: "exact", head: true })
-        .in("module_id", moduleIds)
-
-      return {
-        ...course,
-        enrollmentCount: enrollmentCount || 0,
-        lessonCount: lessonCount || 0,
-      }
-    }),
-  )
+    return {
+      ...course,
+      enrollmentCount: course.enrollments?.length || 0,
+      lessonCount,
+    }
+  })
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -91,11 +114,19 @@ export default async function AdminCoursesPage() {
               {coursesWithStats.map((course) => (
                 <Card key={course.id} className="overflow-hidden hover:shadow-lg transition-shadow">
                   <div className="aspect-video relative bg-muted overflow-hidden">
-                    <img
-                      src={course.thumbnail_url || "/placeholder.svg?height=200&width=400"}
-                      alt={course.title}
-                      className="object-cover w-full h-full"
-                    />
+                    {course.thumbnail_url ? (
+                      <Image
+                        src={course.thumbnail_url}
+                        alt={course.title}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-muted flex items-center justify-center">
+                        <BookOpen className="h-12 w-12 text-muted-foreground" />
+                      </div>
+                    )}
                     <div className="absolute top-3 right-3">
                       <Badge variant={course.is_published ? "default" : "secondary"}>
                         {course.is_published ? "Publicado" : "Borrador"}

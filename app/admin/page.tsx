@@ -5,6 +5,18 @@ import { AdminSidebar } from "@/components/admin-sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, BookOpen, GraduationCap, TrendingUp } from "lucide-react"
 
+// ✅ Tipos explícitos
+interface RecentEnrollment {
+  id: string
+  enrolled_at: string
+  user: {
+    full_name: string
+  } | null
+  course: {
+    title: string
+  } | null
+}
+
 export default async function AdminDashboardPage() {
   const supabase = await getSupabaseServerClient()
 
@@ -17,43 +29,44 @@ export default async function AdminDashboardPage() {
   }
 
   // Get user profile
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, role, full_name, email, avatar_url, created_at, updated_at")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || (profile.role !== "admin" && profile.role !== "instructor")) {
     redirect("/dashboard")
   }
 
-  // Get statistics
-  const { count: totalUsers } = await supabase.from("profiles").select("*", { count: "exact", head: true })
+  // ✅ OPTIMIZACIÓN: Queries en paralelo con Promise.all
+  const [
+    { count: totalUsers },
+    { count: totalCourses },
+    { count: publishedCourses },
+    { data: allProgress },
+    { data: recentEnrollments }
+  ] = await Promise.all([
+    supabase.from("profiles").select("*", { count: "exact", head: true }),
+    supabase.from("courses").select("*", { count: "exact", head: true }),
+    supabase.from("courses").select("*", { count: "exact", head: true }).eq("is_published", true),
+    supabase.from("user_course_progress").select("completed_at"),
+    supabase
+      .from("user_course_progress")
+      .select(`
+        id,
+        enrolled_at,
+        user:profiles!user_course_progress_user_id_fkey(full_name),
+        course:courses(title)
+      `)
+      .order("enrolled_at", { ascending: false })
+      .limit(5)
+      .returns<RecentEnrollment[]>()
+  ])
 
-  const { count: totalCourses } = await supabase.from("courses").select("*", { count: "exact", head: true })
-
-  const { count: publishedCourses } = await supabase
-    .from("courses")
-    .select("*", { count: "exact", head: true })
-    .eq("is_published", true)
-
-  const { count: totalEnrollments } = await supabase
-    .from("user_course_progress")
-    .select("*", { count: "exact", head: true })
-
-  // Get recent enrollments
-  const { data: recentEnrollments } = await supabase
-    .from("user_course_progress")
-    .select(
-      `
-      *,
-      user:profiles!user_course_progress_user_id_fkey(*),
-      course:courses(*)
-    `,
-    )
-    .order("enrolled_at", { ascending: false })
-    .limit(5)
-
-  // Get course completion stats
-  const { data: allProgress } = await supabase.from("user_course_progress").select("*")
-
+  // ✅ Calcula completados en memoria
   const completedCourses = allProgress?.filter((p) => p.completed_at).length || 0
+  const totalEnrollments = allProgress?.length || 0
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -100,7 +113,7 @@ export default async function AdminDashboardPage() {
                   <GraduationCap className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{totalEnrollments || 0}</div>
+                  <div className="text-2xl font-bold">{totalEnrollments}</div>
                   <p className="text-xs text-muted-foreground mt-1">Total de inscripciones</p>
                 </CardContent>
               </Card>
@@ -125,7 +138,7 @@ export default async function AdminDashboardPage() {
               <CardContent>
                 {recentEnrollments && recentEnrollments.length > 0 ? (
                   <div className="space-y-4">
-                    {recentEnrollments.map((enrollment: any) => (
+                    {recentEnrollments.map((enrollment) => (
                       <div
                         key={enrollment.id}
                         className="flex items-center justify-between py-3 border-b last:border-0"

@@ -114,6 +114,12 @@ export default function LoginPage() {
                   "Iniciar Sesión"
                 )}
               </Button>
+              <div className="text-center text-sm text-muted-foreground">
+                ¿No tienes cuenta?{' '}
+                <Link href="/register" className="text-primary hover:underline">
+                  Regístrate aquí
+                </Link>
+              </div>
             </form>
           </CardContent>
           <CardFooter className="flex flex-col gap-2">
